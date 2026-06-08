@@ -74,8 +74,15 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `Request failed with status ${response.status}`);
+    const errorBody = await response.text();
+    let message = errorBody || `Request failed with status ${response.status}`;
+    try {
+      const parsed = JSON.parse(errorBody) as { detail?: string };
+      message = parsed.detail || message;
+    } catch {
+      // Keep the plain response body when the backend did not return JSON.
+    }
+    throw new Error(message);
   }
 
   return response.json() as Promise<T>;
@@ -109,33 +116,41 @@ export default function Home() {
   }, [job]);
 
   useEffect(() => {
-    async function loadMockData() {
+    async function loadConnections() {
       try {
-        const [connectionData, workbookData] = await Promise.all([
-          apiRequest<ConnectionsResponse>("/api/connections"),
-          apiRequest<TableauWorkbook[]>("/api/tableau/views"),
-        ]);
+        const connectionData = await apiRequest<ConnectionsResponse>("/api/connections");
         setConnections(connectionData);
-        setWorkbooks(workbookData);
       } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : "Could not load Briefly mock data.");
+        setErrorMessage(error instanceof Error ? error.message : "Could not load Briefly connection state.");
       }
     }
 
-    void loadMockData();
+    void loadConnections();
   }, []);
 
-  async function connect(provider: Provider) {
+  function connect(provider: Provider) {
     setErrorMessage(null);
-    const path = provider === "tableau" ? "/api/connections/tableau/mock-connect" : "/api/connections/google/mock-connect";
-
-    try {
-      const account = await apiRequest<ConnectedAccount>(path, { method: "POST" });
-      setConnections((current) => ({ ...current, [provider]: account }));
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : `Could not connect ${provider}.`);
-    }
+    window.location.href = `${apiBaseUrl}/auth/${provider}`;
   }
+
+  useEffect(() => {
+    async function loadTableauViews() {
+      if (connections.tableau.status !== "connected") {
+        setWorkbooks([]);
+        setSelectedViewIds([]);
+        return;
+      }
+
+      try {
+        const workbookData = await apiRequest<TableauWorkbook[]>("/api/tableau/views");
+        setWorkbooks(workbookData);
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : "Could not load Tableau views.");
+      }
+    }
+
+    void loadTableauViews();
+  }, [connections.tableau.status]);
 
   function toggleView(viewId: string) {
     setSelectedViewIds((current) =>
@@ -175,28 +190,33 @@ export default function Home() {
 
       <section className="steps-grid" aria-label="Briefly setup steps">
         <article className="card step-card">
-          <div className="step-label">Step 1</div>
+          <div className="step-label">Steps 1 & 2</div>
           <h2>Connect</h2>
-          <p>Use mock connections for now. No API keys, service accounts, or setup docs required.</p>
+          <p>Connect Tableau and Google Slides with OAuth. Tokens stay on the server.</p>
           <div className="connection-list">
             <ConnectionRow
               account={connections.tableau}
               label="Tableau"
-              onConnect={() => void connect("tableau")}
+              onConnect={() => connect("tableau")}
             />
             <ConnectionRow
               account={connections.google}
               label="Google Slides"
-              onConnect={() => void connect("google")}
+              onConnect={() => connect("google")}
             />
           </div>
         </article>
 
         <article className="card step-card select-card">
-          <div className="step-label">Step 2</div>
+          <div className="step-label">Step 3</div>
           <h2>Select</h2>
           <p>Choose the Tableau views that should become slides in the generated deck.</p>
           <div className="workbook-list">
+            {connections.tableau.status !== "connected" ? (
+              <p className="empty-state">Connect Tableau to load workbooks and views.</p>
+            ) : workbooks.length === 0 ? (
+              <p className="empty-state">No Tableau views found.</p>
+            ) : null}
             {workbooks.map((workbook) => (
               <fieldset className="workbook" key={workbook.id}>
                 <legend>{workbook.name}</legend>
@@ -219,7 +239,7 @@ export default function Home() {
         </article>
 
         <article className="card step-card">
-          <div className="step-label">Step 3</div>
+          <div className="step-label">Step 4</div>
           <h2>Generate</h2>
           <p>Create a brand-new Google Slides deck with one selected Tableau view per slide.</p>
           <button className="primary-button" disabled={!canGenerate} onClick={() => void generateDeck()}>

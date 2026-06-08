@@ -39,7 +39,7 @@ class TableauView(BaseModel):
     id: str
     workbook_id: str
     name: str
-    description: str
+    description: str = "Rendered Tableau view"
 
 
 class TableauWorkbook(BaseModel):
@@ -69,21 +69,26 @@ class DeckGenerationJob(BaseModel):
     completed_at: datetime | None = None
 
     @classmethod
-    def create_completed(cls, view_ids: list[str], slide_count: int) -> "DeckGenerationJob":
+    def create_completed(cls, view_ids: list[str], generated_deck: GeneratedDeck) -> "DeckGenerationJob":
         now = datetime.now(timezone.utc)
-        job_id = str(uuid4())
-        deck = GeneratedDeck(
-            id=f"deck_{job_id}",
-            title="Briefly Executive Update",
-            url=f"https://docs.google.com/presentation/d/mock-briefly-{job_id}/edit",
-            slide_count=slide_count,
-        )
         return cls(
-            id=job_id,
+            id=str(uuid4()),
             status=JobStatus.COMPLETED,
             requested_view_ids=view_ids,
-            message="Your executive-ready deck is ready.",
-            generated_deck=deck,
+            message="Your Google Slides deck is ready.",
+            generated_deck=generated_deck,
+            created_at=now,
+            completed_at=now,
+        )
+
+    @classmethod
+    def create_failed(cls, view_ids: list[str], message: str) -> "DeckGenerationJob":
+        now = datetime.now(timezone.utc)
+        return cls(
+            id=str(uuid4()),
+            status=JobStatus.FAILED,
+            requested_view_ids=view_ids,
+            message=message,
             created_at=now,
             completed_at=now,
         )

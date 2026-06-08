@@ -334,3 +334,167 @@ Phase 0 does not include:
 - Scheduling
 - AI commentary
 - Slide designer or dashboard editor
+
+---
+
+# Phase 0 Vertical Slice Implementation
+
+The current implementation replaces mock deck generation with the first end-to-end Tableau-to-Google-Slides vertical slice while keeping the product workflow intentionally small:
+
+1. Connect Tableau.
+2. Connect Google Slides.
+3. Select Tableau views.
+4. Generate a deck.
+
+Briefly exports rendered Tableau visualization images and inserts them into Google Slides. It does not rebuild charts or extract raw data.
+
+## Current Capabilities
+
+- FastAPI backend.
+- Next.js frontend.
+- Tableau OAuth entry point and callback.
+- Google OAuth entry point and callback.
+- Server-side development token storage.
+- Tableau workbook and view discovery through Tableau REST API.
+- Tableau rendered view image retrieval.
+- Google Slides presentation creation.
+- One generated slide per selected Tableau view plus a title slide.
+- Human-readable errors for common OAuth and generation failures.
+
+## Current Limitations
+
+This is development-grade only.
+
+- Tokens are stored in a local JSON file, not a production secret store.
+- There are no user accounts, sessions, teams, or multi-tenancy.
+- Generation is synchronous and runs in the request path.
+- Temporary Tableau images are stored in backend memory so Google Slides can fetch them during deck creation.
+- The backend must be reachable by Google while generating a deck. For local testing, expose the backend with a tunnel and set `APP_BASE_URL` to the public HTTPS URL.
+- Tableau OAuth endpoints vary by connected app / authorization server setup. Configure the Tableau authorization and token URLs for your Tableau Cloud OAuth setup.
+- No template mapping, refresh, scheduling, AI commentary, editing, PowerPoint export, or additional BI platforms are included.
+
+## Backend Setup
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+The API runs on `http://localhost:8000` by default.
+
+## Frontend Setup
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend runs on `http://localhost:3000` by default.
+
+## Required Environment Variables
+
+Create a backend `.env` file or export these values before starting FastAPI.
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `APP_BASE_URL` | Yes | Public backend URL used for OAuth callbacks and temporary image URLs. Use `http://localhost:8000` only when the provider can call localhost; otherwise use a tunnel URL. |
+| `FRONTEND_BASE_URL` | Yes | Frontend URL for CORS and post-OAuth redirects. Defaults to `http://localhost:3000`. |
+| `TOKEN_STORE_PATH` | No | Local development token file path. Defaults to `.briefly_tokens.json`. |
+| `TABLEAU_SERVER_URL` | Yes | Tableau Cloud site server URL, for example `https://prod-useast-a.online.tableau.com`. |
+| `TABLEAU_SITE_CONTENT_URL` | Yes | Tableau site content URL. Use an empty string for the default site. |
+| `TABLEAU_API_VERSION` | No | Tableau REST API version. Defaults to `3.25`. |
+| `TABLEAU_CLIENT_ID` | Yes | Tableau OAuth client id. |
+| `TABLEAU_CLIENT_SECRET` | Yes | Tableau OAuth client secret. |
+| `TABLEAU_AUTHORIZATION_URL` | Yes | Tableau OAuth authorization endpoint for your connected app / authorization server. |
+| `TABLEAU_TOKEN_URL` | Yes | Tableau OAuth token endpoint for your connected app / authorization server. |
+| `TABLEAU_SCOPES` | Yes | Space-delimited Tableau scopes. Defaults to `tableau:content:read tableau:views:download`. |
+| `GOOGLE_CLIENT_ID` | Yes | Google OAuth web client id. |
+| `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth web client secret. |
+| `GOOGLE_SCOPES` | No | Google scopes. Defaults to `https://www.googleapis.com/auth/presentations`. |
+
+Frontend environment:
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `NEXT_PUBLIC_API_BASE_URL` | No | Backend URL used by the browser. Defaults to `http://localhost:8000`. |
+
+## Tableau OAuth Setup
+
+1. Create or configure a Tableau Cloud OAuth-capable connected app / authorization server for your site.
+2. Add this redirect URI:
+
+   ```text
+   {APP_BASE_URL}/auth/tableau/callback
+   ```
+
+3. Grant the minimum scopes needed to list content and download rendered view images:
+
+   ```text
+   tableau:content:read tableau:views:download
+   ```
+
+4. Set the Tableau environment variables listed above.
+5. Start the backend and click **Connect Tableau** in the UI.
+
+After OAuth completes, Briefly stores the returned token data in the local development token file. Tokens are never sent to the frontend.
+
+## Google OAuth Setup
+
+1. In Google Cloud Console, create an OAuth client of type **Web application**.
+2. Enable the Google Slides API.
+3. Add this redirect URI:
+
+   ```text
+   {APP_BASE_URL}/auth/google/callback
+   ```
+
+4. Use the minimal Slides scope:
+
+   ```text
+   https://www.googleapis.com/auth/presentations
+   ```
+
+5. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+6. Start the backend and click **Connect Google Slides** in the UI.
+
+## Local End-to-End Development Notes
+
+Google Slides `createImage` requests fetch images by URL. Briefly temporarily serves Tableau-rendered images from the backend at `/api/images/{image_id}` during deck creation.
+
+For a real local E2E test:
+
+1. Run FastAPI locally.
+2. Expose FastAPI with a public HTTPS tunnel.
+3. Set `APP_BASE_URL` and `NEXT_PUBLIC_API_BASE_URL` to that public backend URL.
+4. Configure Tableau and Google OAuth redirect URIs with the same public backend URL.
+5. Connect Tableau.
+6. Connect Google Slides.
+7. Select Tableau views.
+8. Generate the deck and open the returned Google Slides URL.
+
+## Validation
+
+Unit tests cover:
+
+- Health endpoint.
+- Tableau service initialization.
+- Google Slides service initialization.
+- Deck generation orchestration.
+
+Run backend tests:
+
+```bash
+cd backend
+pytest
+```
+
+Run frontend type checks:
+
+```bash
+cd frontend
+npm run typecheck
+```

@@ -13,3 +13,7 @@ npm-debug.log*
 # Local config
 .env
 .env.local
+
+# Briefly local development tokens
+.briefly_tokens.json
+backend/.briefly_tokens.json

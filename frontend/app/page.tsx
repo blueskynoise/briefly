@@ -182,7 +182,7 @@ export default function Home() {
         <p className="eyebrow">Phase 0 MVP</p>
         <h1>Generate an executive-ready deck from Tableau views.</h1>
         <p>
-          Connect Tableau, connect Google Slides, select the views you need, and let Briefly create the first draft of your meeting deck.
+          Connect your tools, select the views you need, and let Briefly create the first draft of your meeting deck.
         </p>
       </section>
 
@@ -190,7 +190,7 @@ export default function Home() {
 
       <section className="steps-grid" aria-label="Briefly setup steps">
         <article className="card step-card">
-          <div className="step-label">Steps 1 & 2</div>
+          <div className="step-label">Step 1</div>
           <h2>Connect</h2>
           <p>Connect Tableau and Google Slides with OAuth. Tokens stay on the server.</p>
           <div className="connection-list">
@@ -208,7 +208,7 @@ export default function Home() {
         </article>
 
         <article className="card step-card select-card">
-          <div className="step-label">Step 3</div>
+          <div className="step-label">Step 2</div>
           <h2>Select</h2>
           <p>Choose the Tableau views that should become slides in the generated deck.</p>
           <div className="workbook-list">
@@ -239,7 +239,7 @@ export default function Home() {
         </article>
 
         <article className="card step-card">
-          <div className="step-label">Step 4</div>
+          <div className="step-label">Step 3</div>
           <h2>Generate</h2>
           <p>Create a brand-new Google Slides deck with one selected Tableau view per slide.</p>
           <button className="primary-button" disabled={!canGenerate} onClick={() => void generateDeck()}>

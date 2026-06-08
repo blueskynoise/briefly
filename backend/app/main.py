@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 
-from .config import get_settings
+from .config import get_settings, parse_tableau_url
 from .deck_generation_service import DeckGenerationService
 from .errors import AuthenticationError, BrieflyServiceError, IntegrationError
 from .google_slides_service import GoogleSlidesService
@@ -14,6 +14,7 @@ from .models import (
     DeckGenerationRequest,
     HealthResponse,
     Provider,
+    TableauUrlParseResult,
     TableauWorkbook,
 )
 from .tableau_service import TableauService
@@ -95,6 +96,12 @@ async def auth_google_callback(code: str = Query(default=""), state: str | None 
     except BrieflyServiceError as exc:
         raise _service_error(exc) from exc
     return RedirectResponse(f"{settings.frontend_base_url.rstrip('/')}?connected=google")
+
+
+@app.get("/api/tableau/parse-url", response_model=TableauUrlParseResult)
+def tableau_parse_url(url: str = Query(..., description="Any Tableau dashboard or workbook URL")) -> TableauUrlParseResult:
+    server_url, site_content_url = parse_tableau_url(url)
+    return TableauUrlParseResult(server_url=server_url, site_content_url=site_content_url)
 
 
 @app.get("/api/tableau/views", response_model=list[TableauWorkbook])

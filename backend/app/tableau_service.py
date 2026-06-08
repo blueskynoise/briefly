@@ -18,15 +18,11 @@ class TableauService:
         self.server_url = settings.tableau_server_url.rstrip("/")
 
     def is_configured(self) -> bool:
-        return all(
-            [
-                self.server_url,
-                self.settings.tableau_client_id,
-                self.settings.tableau_client_secret,
-                self.settings.tableau_authorization_url,
-                self.settings.tableau_token_url,
-            ]
-        )
+        return all([
+            self.server_url,
+            self.settings.tableau_client_id,
+            self.settings.tableau_client_secret,
+        ])
 
     def get_connection(self) -> ConnectedAccount:
         token = self.token_store.get(Provider.TABLEAU)

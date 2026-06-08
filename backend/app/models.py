@@ -94,6 +94,11 @@ class DeckGenerationJob(BaseModel):
         )
 
 
+class TableauUrlParseResult(BaseModel):
+    server_url: str
+    site_content_url: str
+
+
 class HealthResponse(BaseModel):
     status: Literal["ok"]
     service: str

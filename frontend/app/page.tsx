@@ -74,13 +74,13 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const errorBody = await response.text();
-    let message = errorBody || `Request failed with status ${response.status}`;
+    let message = `Request failed with status ${response.status}`;
     try {
+      const errorBody = await response.text();
       const parsed = JSON.parse(errorBody) as { detail?: string };
       message = parsed.detail || message;
     } catch {
-      // Keep the plain response body when the backend did not return JSON.
+      // Non-JSON response (e.g. HTML error page from a proxy) — keep the status-based message.
     }
     throw new Error(message);
   }
@@ -120,8 +120,15 @@ export default function Home() {
       try {
         const connectionData = await apiRequest<ConnectionsResponse>("/api/connections");
         setConnections(connectionData);
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : "Could not load Briefly connection state.");
+      } catch {
+        // Retry once — the backend may still be cold-starting.
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          const connectionData = await apiRequest<ConnectionsResponse>("/api/connections");
+          setConnections(connectionData);
+        } catch (error) {
+          setErrorMessage(error instanceof Error ? error.message : "Could not load Briefly connection state.");
+        }
       }
     }
 

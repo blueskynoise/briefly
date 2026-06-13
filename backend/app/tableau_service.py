@@ -6,9 +6,72 @@ from urllib.parse import urlencode
 import httpx
 
 from .config import Settings
+from .config import parse_tableau_url
 from .errors import AuthenticationError, IntegrationError
-from .models import ConnectedAccount, ConnectionStatus, Provider, TableauView, TableauWorkbook
+from .models import ConnectedAccount, ConnectionStatus, Provider, TableauConnectionValidateRequest, TableauConnectionValidationResponse, TableauView, TableauWorkbook
 from .token_store import DevelopmentTokenStore
+
+
+class TableauRestClient:
+    def __init__(self, api_version: str):
+        self.api_version = api_version
+
+    async def sign_in_with_pat(self, request: TableauConnectionValidateRequest) -> TableauConnectionValidationResponse:
+        try:
+            server_url, _ = parse_tableau_url(request.server_url)
+        except ValueError as exc:
+            return TableauConnectionValidationResponse(success=False, message=str(exc))
+        payload = {
+            "credentials": {
+                "personalAccessTokenName": request.pat_name,
+                "personalAccessTokenSecret": request.pat_secret.get_secret_value(),
+                "site": {"contentUrl": request.site_content_url},
+            }
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    f"{server_url}/api/{self.api_version}/auth/signin",
+                    json=payload,
+                    headers={"Accept": "application/json", "Content-Type": "application/json"},
+                )
+        except httpx.RequestError:
+            return TableauConnectionValidationResponse(
+                success=False,
+                message="Could not reach Tableau. Check the server URL and your network access.",
+                server_url=server_url,
+                site_content_url=request.site_content_url,
+            )
+        if response.status_code in {401, 403}:
+            return TableauConnectionValidationResponse(
+                success=False,
+                message="Tableau rejected the Personal Access Token or site content URL. Check the PAT name, secret, and site.",
+                server_url=server_url,
+                site_content_url=request.site_content_url,
+            )
+        if response.status_code >= 400:
+            return TableauConnectionValidationResponse(
+                success=False,
+                message="Tableau sign-in failed. Check the site content URL and try again.",
+                server_url=server_url,
+                site_content_url=request.site_content_url,
+            )
+        try:
+            credentials = response.json().get("credentials", {})
+            token = credentials.get("token")
+            site = credentials.get("site", {})
+            user = credentials.get("user", {})
+        except ValueError:
+            return TableauConnectionValidationResponse(success=False, message="Tableau returned an unexpected response.", server_url=server_url, site_content_url=request.site_content_url)
+        if not token or not site.get("id") or not user.get("id"):
+            return TableauConnectionValidationResponse(success=False, message="Tableau returned an unexpected sign-in response.", server_url=server_url, site_content_url=request.site_content_url)
+        display = user.get("name") or user.get("id")
+        site_label = site.get("contentUrl") or request.site_content_url or "Default site"
+        return TableauConnectionValidationResponse(success=True, message=f"Connected to Tableau as {display} on {site_label}.", server_url=server_url, site_content_url=request.site_content_url, site_id=site.get("id"), user_id=user.get("id"), display_name=display)
+
+    async def sign_out(self, server_url: str, token: str) -> None:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(f"{server_url.rstrip('/')}/api/{self.api_version}/auth/signout", headers={"X-Tableau-Auth": token})
 
 
 class TableauService:
@@ -16,6 +79,7 @@ class TableauService:
         self.settings = settings
         self.token_store = token_store
         self.server_url = settings.tableau_server_url.rstrip("/")
+        self.rest_client = TableauRestClient(settings.tableau_api_version)
 
     def is_configured(self) -> bool:
         return all([

@@ -246,3 +246,38 @@ p {
   font-size: 0.95rem;
   margin: 0;
 }
+
+.tableau-form,
+.onboarding-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.tableau-form label {
+  color: var(--text);
+  display: grid;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.tableau-form input {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.onboarding-panel,
+.success-box {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 18px;
+  padding: 14px;
+}
+
+.onboarding-panel p,
+.success-box {
+  color: var(--success);
+  margin: 0;
+}

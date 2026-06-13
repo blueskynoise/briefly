@@ -14,16 +14,24 @@ from .models import (
     DeckGenerationRequest,
     HealthResponse,
     Provider,
+    TableauConnectionCreateRequest,
+    TableauConnectionResponse,
+    TableauConnectionValidateRequest,
+    TableauConnectionValidationResponse,
     TableauUrlParseResult,
     TableauWorkbook,
 )
-from .tableau_service import TableauService
+from .tableau_connections import InMemoryTableauConnectionStore, InMemoryTableauSecretStore
+from .tableau_service import TableauRestClient, TableauService
 from .token_store import DevelopmentTokenStore
 
 settings = get_settings()
 token_store = DevelopmentTokenStore(settings.token_store_path)
 image_store = TemporaryImageStore()
 tableau_service = TableauService(settings, token_store)
+tableau_secret_store = InMemoryTableauSecretStore()
+tableau_connection_store = InMemoryTableauConnectionStore(tableau_secret_store)
+tableau_rest_client = TableauRestClient(settings.tableau_api_version)
 google_slides_service = GoogleSlidesService(settings, token_store)
 deck_generation_service = DeckGenerationService(tableau_service, google_slides_service, image_store, settings)
 
@@ -45,6 +53,25 @@ def _service_error(error: BrieflyServiceError) -> HTTPException:
     if isinstance(error, IntegrationError):
         status_code = 502
     return HTTPException(status_code=status_code, detail=str(error))
+
+
+def _normalize_tableau_connection_request(request: TableauConnectionCreateRequest) -> TableauConnectionCreateRequest:
+    try:
+        server_url, extracted_site = parse_tableau_url(request.server_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    pat_secret = request.pat_secret.get_secret_value().strip()
+    if not request.pat_name.strip() or not pat_secret:
+        raise HTTPException(status_code=422, detail="Enter both the Personal Access Token name and secret.")
+    return request.model_copy(
+        update={
+            "server_url": server_url,
+            "site_content_url": request.site_content_url.strip().strip("/") or extracted_site,
+            "pat_name": request.pat_name.strip(),
+            "display_name": request.display_name.strip(),
+            "pat_secret": request.pat_secret,
+        }
+    )
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -102,6 +129,35 @@ async def auth_google_callback(code: str = Query(default=""), state: str | None 
 def tableau_parse_url(url: str = Query(..., description="Any Tableau dashboard or workbook URL")) -> TableauUrlParseResult:
     server_url, site_content_url = parse_tableau_url(url)
     return TableauUrlParseResult(server_url=server_url, site_content_url=site_content_url)
+
+
+@app.get("/api/tableau/connections", response_model=list[TableauConnectionResponse])
+def list_tableau_connections() -> list[TableauConnectionResponse]:
+    return [TableauConnectionResponse.from_connection(connection) for connection in tableau_connection_store.list_connections()]
+
+
+@app.post("/api/tableau/connections/validate", response_model=TableauConnectionValidationResponse)
+async def validate_tableau_connection(request: TableauConnectionValidateRequest) -> TableauConnectionValidationResponse:
+    normalized = _normalize_tableau_connection_request(request)
+    return await tableau_rest_client.sign_in_with_pat(normalized)
+
+
+@app.post("/api/tableau/connections", response_model=TableauConnectionResponse)
+async def create_tableau_connection(request: TableauConnectionCreateRequest) -> TableauConnectionResponse:
+    normalized = _normalize_tableau_connection_request(request)
+    validation = await tableau_rest_client.sign_in_with_pat(TableauConnectionValidateRequest(**normalized.model_dump()))
+    if not validation.success:
+        raise HTTPException(status_code=400, detail=validation.message)
+    connection = tableau_connection_store.create(normalized)
+    tableau_connection_store.mark_validated(connection.id)
+    return TableauConnectionResponse.from_connection(tableau_connection_store.get(connection.id) or connection)
+
+
+@app.delete("/api/tableau/connections/{connection_id}", status_code=204)
+def delete_tableau_connection(connection_id: str) -> Response:
+    if not tableau_connection_store.delete(connection_id):
+        raise HTTPException(status_code=404, detail="Tableau connection not found.")
+    return Response(status_code=204)
 
 
 @app.get("/api/tableau/views", response_model=list[TableauWorkbook])

@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 
 class Provider(StrEnum):
@@ -33,6 +33,76 @@ class ConnectedAccount(BaseModel):
 class ConnectionsResponse(BaseModel):
     tableau: ConnectedAccount
     google: ConnectedAccount
+
+
+class TableauConnectionValidationStatus(StrEnum):
+    UNVALIDATED = "unvalidated"
+    VALID = "valid"
+    INVALID = "invalid"
+
+
+class TableauConnection(BaseModel):
+    id: str
+    display_name: str
+    server_url: str
+    site_content_url: str = ""
+    auth_type: Literal["pat"] = "pat"
+    pat_name: str
+    encrypted_pat_secret: str
+    created_at: datetime
+    last_validated_at: datetime | None = None
+    validation_status: TableauConnectionValidationStatus = TableauConnectionValidationStatus.UNVALIDATED
+
+
+class TableauConnectionResponse(BaseModel):
+    id: str
+    display_name: str
+    server_url: str
+    site_content_url: str = ""
+    auth_type: Literal["pat"] = "pat"
+    pat_name: str
+    created_at: datetime
+    last_validated_at: datetime | None = None
+    validation_status: TableauConnectionValidationStatus
+
+    @classmethod
+    def from_connection(cls, connection: TableauConnection) -> "TableauConnectionResponse":
+        return cls(**connection.model_dump(exclude={"encrypted_pat_secret"}))
+
+
+class TableauConnectionCreateRequest(BaseModel):
+    server_url: str
+    site_content_url: str = ""
+    pat_name: str
+    pat_secret: SecretStr
+    display_name: str
+
+    @field_validator("server_url", "display_name", "pat_name")
+    @classmethod
+    def require_non_empty(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Field is required.")
+        return value
+
+    @field_validator("site_content_url")
+    @classmethod
+    def clean_site_content_url(cls, value: str) -> str:
+        return value.strip().strip("/")
+
+
+class TableauConnectionValidateRequest(TableauConnectionCreateRequest):
+    pass
+
+
+class TableauConnectionValidationResponse(BaseModel):
+    success: bool
+    message: str
+    server_url: str | None = None
+    site_content_url: str | None = None
+    site_id: str | None = None
+    user_id: str | None = None
+    display_name: str | None = None
 
 
 class TableauView(BaseModel):

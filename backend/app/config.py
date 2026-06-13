@@ -8,21 +8,20 @@ from urllib.parse import urlparse
 
 
 def parse_tableau_url(url: str) -> tuple[str, str]:
-    """Return (server_url, site_content_url) parsed from any Tableau Cloud or Server URL.
-
-    Works with dashboard URLs like:
-      https://10ax.online.tableau.com/#/site/MyOrg/views/...
-      https://myserver.company.com/#/site/Sales/workbooks/...
-    Default-site URLs (no /site/ segment) return an empty site_content_url.
-    """
-    parsed = urlparse(url)
-    server_url = f"{parsed.scheme}://{parsed.netloc}"
-    # The site name appears after /site/ in either the path or the hash fragment.
-    searchable = parsed.path + "/" + (parsed.fragment or "")
+    """Return (server_url, site_content_url) parsed from a Tableau URL or origin."""
+    raw_url = (url or "").strip()
+    if not raw_url:
+        raise ValueError("Enter a Tableau server URL or dashboard URL.")
+    if "://" not in raw_url:
+        raw_url = f"https://{raw_url}"
+    parsed = urlparse(raw_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Enter a valid Tableau URL, including a Tableau host.")
+    server_url = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    searchable = f"{parsed.path}/{parsed.fragment or ''}"
     match = re.search(r"/site/([^/?#]+)", searchable)
-    site_content_url = match.group(1) if match else ""
+    site_content_url = match.group(1).strip("/") if match else ""
     return server_url, site_content_url
-
 
 @dataclass
 class Settings:
